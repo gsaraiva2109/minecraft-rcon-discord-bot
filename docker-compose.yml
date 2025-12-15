@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  mconbot:
+    build: .
+    container_name: mconbot
+    restart: unless-stopped
+    # Mount the .env file from the src directory or root (adjust as needed)
+    # Better to just use env_file for the variable injection
+    env_file:
+      - src/.env 
+    # CRITICALLY: For the bot to run commands ON THE HOST via sudo, it's complex.
+    # The current code assumes the container acts as the host user or has access.
+    # Standard practice for managing host processes from a container involves:
+    # 1. Privileged mode (not recommended but easiest for beginners)
+    # 2. Mounting the docker socket (if managing docker containers)
+    # 3. SSH (safest)
+    # Given the instructions were strict about 'sudo -u mcserver', we assume the user has a setup
+    # where the container shares the user namespace or is running directly.
+    # But for a standard Portainer deploy, we'll assume the user might need 'network_mode: host'
+    # to access local RCON easily.
+    network_mode: host

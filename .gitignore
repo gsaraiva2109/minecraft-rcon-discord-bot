@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment Variables
+.env
+src/.env
+*.env
+
+# Agent
+.agent/
+
+# OS
+.DS_Store

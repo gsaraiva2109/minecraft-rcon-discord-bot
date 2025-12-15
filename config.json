@@ -1,0 +1,9 @@
+{
+  "discord_token": "ENV_DISCORD_TOKEN",
+  "discord_allowed_users": "ENV_DISCORD_ALLOWED_USERS",
+  "discord_admin_role_id": "ENV_DISCORD_ADMIN_ROLE_ID",
+  "minecraft_ip": "ENV_MINECRAFT_IP",
+  "minecraft_port": "ENV_RCON_PORT",
+  "minecraft_password": "ENV_MINECRAFT_PASS",
+  "rcon_timeout": "ENV_RCON_TIMEOUT"
+}
