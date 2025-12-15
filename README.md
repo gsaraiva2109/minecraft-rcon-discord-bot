@@ -78,12 +78,26 @@ This requires `docker` and `docker-compose`.
     ```
     _Note: The default `docker-compose.yml` uses `network_mode: host` to simplify connecting to a local Minecraft server._
 
-### Option B: Portainer
+### Option B: Portainer (Recommended)
 
-1.  Create a new **Stack**.
-2.  Copy the contents of `docker-compose.yml` into the web editor.
-3.  Upload your `.env` file or manually define the Environment Variables in the "Environment" section.
-4.  Deploy the stack.
+This method allows Portainer to pull the code directly from GitHub and build it.
+
+1.  In Portainer, go to **Stacks** > **Add stack**.
+2.  Select **Repository**.
+3.  **Repository URL**: `https://github.com/yourusername/minecraft-rcon-discord-bot.git` (Replace with your actual URL).
+4.  **Compose path**: `docker-compose.yml`.
+5.  **Environment variables**:
+    Click "Add an environment variable" for each of the following specific values:
+    - `DISCORD_TOKEN`: `your_token`
+    - `DISCORD_ALLOWED_USERS`: `123,456`
+    - `DISCORD_ADMIN_ROLE_ID`: `789`
+    - `MINECRAFT_IP`: `127.0.0.1` (or your LAN IP)
+    - `MINECRAFT_PASS`: `password`
+    - `RCON_PORT`: `25575`
+    - `RCON_TIMEOUT`: `10`
+6.  Click **Deploy the stack**.
+
+**Note on "Automatic .env"**: Portainer does not automatically create a `.env` file for you to edit textually. Instead, you define the keys and values in the "Environment variables" section of the UI, and Portainer injects them into the container at runtime.
 
 ### Option C: Manual (Python)
 
