@@ -48,7 +48,7 @@ except Exception as e:
 
 # Setup bot intents
 intents = discord.Intents.default()
-intents.message_content = True # Required for hybrid commands if using prefix (though we primarily use slash)
+intents.message_content = True # Required for hybrid commands and on_message mention check
 
 # Initialize Bot
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -65,7 +65,33 @@ async def on_ready():
         print(f"Synced {len(synced)} command(s)")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
+    
+    # Set Status
+    await bot.change_presence(activity=discord.Game(name="Developed by Pluppys"))
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
+
+@bot.event
+async def on_message(message):
+    # Ignore own messages
+    if message.author == bot.user:
+        return
+
+    # Check for mention (Ping)
+    if bot.user.mentioned_in(message) and message.mention_everyone is False:
+        embed = discord.Embed(
+            title="Minecraft Manager Bot Guide",
+            description="Here is how to use the bot commands:",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="/start", value="Start the Minecraft server (Admin only)", inline=False)
+        embed.add_field(name="/stop", value="Stop the Minecraft server (Admin only)", inline=False)
+        embed.add_field(name="/restart", value="Restart the Minecraft server (Admin only)", inline=False)
+        embed.add_field(name="/send <cmd>", value="Send RCON command to console (Authorized users only)", inline=False)
+        embed.set_footer(text="Developed by Pluppys")
+        
+        await message.channel.send(embed=embed)
+        
+    await bot.process_commands(message)
 
 # --- Helper Function for System Commands ---
 async def run_system_command(interaction: discord.Interaction, action: str):
@@ -76,24 +102,25 @@ async def run_system_command(interaction: discord.Interaction, action: str):
     # Role Check
     user_roles = [role.id for role in interaction.user.roles]
     if ADMIN_ROLE_ID not in user_roles:
-        await interaction.response.send_message("⛔ You do not have permission to run this command.", ephemeral=True)
+        embed = discord.Embed(title="Permission Denied", description="⛔ You do not have permission to run this command.", color=discord.Color.red())
+        await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
     # Defer response as these commands can take time
-    await interaction.response.defer(ephemeral=False) # Public visibility for server lifecycle events is usually good, but let's keep it visible.
+    await interaction.response.defer(ephemeral=False) 
 
     action_verb = f"{action.capitalize()}ing"
-    await interaction.followup.send(f"⏳ **{action_verb} the Minecraft server...** Please wait.")
+    embed_loading = discord.Embed(
+        title=f"{action.capitalize()} Server",
+        description=f"⏳ **{action_verb} the Minecraft server...** Please wait.",
+        color=discord.Color.orange()
+    )
+    await interaction.followup.send(embed=embed_loading)
 
     # Construct command: sudo -u mcserver /home/mcserver/mcserver <start|stop|restart>
     cmd = ["sudo", "-u", "mcserver", "/home/mcserver/mcserver", action]
 
     try:
-        # Run command in a separate thread to not block the bot's event loop
-        # Subprocess.run is blocking, so we run it in an executor if we strictly follow async principles,
-        # but for simplicity and low load, direct call might be okay. 
-        # However, to be robust, let's wrap it.
-        
         def _exec():
             return subprocess.run(cmd, capture_output=True, text=True)
 
@@ -101,18 +128,33 @@ async def run_system_command(interaction: discord.Interaction, action: str):
 
         if result.returncode == 0:
             # Success
-            # LinuxGSM output can be long, maybe just send simplest confirmation.
-            # But user requested feedback based on command's output.
-            # We'll truncate if too long (Discord limit 2000 chars)
             output = result.stdout[:1900] 
-            await interaction.followup.send(f"✅ **Server {action} successful!**\n```{output}```")
+            embed_success = discord.Embed(
+                title=f"Server {action.capitalize()} Successful",
+                description=f"✅ **Action completed successfully.**",
+                color=discord.Color.green()
+            )
+            if output:
+                embed_success.add_field(name="Output", value=f"```{output}```", inline=False)
+                
+            await interaction.followup.send(embed=embed_success)
         else:
             # Failure
             error_msg = result.stderr[:1900] if result.stderr else result.stdout[:1900]
-            await interaction.followup.send(f"❌ **Failed to {action} server.**\nCode: {result.returncode}\nError:\n```{error_msg}```")
+            embed_fail = discord.Embed(
+                title=f"Server {action.capitalize()} Failed",
+                description=f"❌ **Failed to execute command.**",
+                color=discord.Color.red()
+            )
+            embed_fail.add_field(name="Error Code", value=str(result.returncode), inline=True)
+            if error_msg:
+                embed_fail.add_field(name="Error Output", value=f"```{error_msg}```", inline=False)
+            
+            await interaction.followup.send(embed=embed_fail)
 
     except Exception as e:
-        await interaction.followup.send(f"❌ **Internal Error:** {str(e)}")
+        embed_error = discord.Embed(title="Internal Error", description=f"❌ **An exception occurred:** {str(e)}", color=discord.Color.dark_red())
+        await interaction.followup.send(embed=embed_error)
 
 
 # --- Commands ---
@@ -134,7 +176,8 @@ async def restart_server(interaction: discord.Interaction):
 @app_commands.describe(command="The command to execute")
 async def send(interaction: discord.Interaction, command: str):
     if interaction.user.id not in ALLOWED_USERS:
-        await interaction.response.send_message("⛔ You are not authorized to use this command.", ephemeral=True)
+        embed = discord.Embed(title="Permission Denied", description="⛔ You are not authorized to use this command.", color=discord.Color.red())
+        await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
     await interaction.response.defer(ephemeral=True)
@@ -145,13 +188,21 @@ async def send(interaction: discord.Interaction, command: str):
         with rcon(IP, PASS, PORT, timeout=TIMEOUT) as mcr:
             response = mcr.command(command)
     except Exception as e:
-        await interaction.followup.send(f"Failed to send command: {e}", ephemeral=True)
+        embed_error = discord.Embed(title="RCON Error", description=f"Failed to send command: {e}", color=discord.Color.red())
+        await interaction.followup.send(embed=embed_error, ephemeral=True)
         return
 
     if not response:
         response = "No response received."
 
-    await interaction.followup.send(f"Command executed:\n```{command}```\nResponse:\n```{response}```", ephemeral=True)
+    embed_response = discord.Embed(title="RCON Command Executed", color=discord.Color.purple())
+    embed_response.add_field(name="Command", value=f"```{command}```", inline=False)
+    # Truncate response if too long
+    if len(response) > 1024:
+         response = response[:1020] + "..."
+    embed_response.add_field(name="Response", value=f"```{response}```", inline=False)
+    
+    await interaction.followup.send(embed=embed_response, ephemeral=True)
 
 if __name__ == "__main__":
     bot.run(TOKEN)

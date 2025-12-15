@@ -17,6 +17,17 @@ A powerful Discord bot that bridges your Discord server with your Minecraft serv
 - **LinuxGSM** installed on the host (for lifecycle commands).
 - **Discord Bot Token**: Obtained from the [Discord Developer Portal](https://discord.com/developers/applications).
 
+### Critical: Discord Developer Portal Setup
+
+To prevent `PrivilegedIntentsRequired` errors, you must enable **Message Content Intent**.
+
+1.  Go to the [Discord Developer Portal](https://discord.com/developers/applications).
+2.  Select your application.
+3.  Go to **Bot** in the sidebar.
+4.  Scroll down to **Privileged Gateway Intents**.
+5.  Toggle **ON**: `Message Content Intent`.
+6.  Click **Save Changes**.
+
 ## Installation & Setup
 
 ### 1. Clone the Repository
