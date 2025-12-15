@@ -4,9 +4,6 @@ __pycache__/
 *$py.class
 
 # Environment Variables
-.env
-src/.env
-*.env
 
 # Agent
 .agent/

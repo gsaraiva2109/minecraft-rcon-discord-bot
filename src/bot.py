@@ -32,6 +32,10 @@ try:
     # ALLOWED_USERS handling (string to list of ints)
     allowed_users_str = get_config_val('discord_allowed_users', '')
     ALLOWED_USERS = [int(u.strip()) for u in allowed_users_str.split(',')] if allowed_users_str else []
+
+    # ALLOWED_CHANNELS handling
+    allowed_channels_str = get_config_val('discord_allowed_channels', '')
+    ALLOWED_CHANNELS = [int(ch.strip()) for ch in allowed_channels_str.split(',')] if allowed_channels_str else []
     
     IP = get_config_val('minecraft_ip')
     PASS = get_config_val('minecraft_password')
@@ -50,33 +54,64 @@ except Exception as e:
 intents = discord.Intents.default()
 intents.message_content = True # Required for hybrid commands and on_message mention check
 
-# Initialize Bot
-bot = commands.Bot(command_prefix="!", intents=intents)
-
 # Architect's Notes:
-# We are using discord.ext.commands.Bot to leverage the powerful 'hybrid_command' system.
-# This allows us to easily implement slash commands with role-based access control.
-# Subprocess calls are constructed as lists to prevent shell injection, adhering to Prime Directive 2.
+# We subclass commands.Bot to implement setup_hook. 
+# This is the robust v2.0 way to ensure sync and status updates happen correctly on startup.
+
+class MinecraftBot(commands.Bot):
+    async def setup_hook(self):
+        # Sync Commands
+        try:
+            synced = await self.tree.sync()
+            print(f"Synced {len(synced)} command(s)")
+        except Exception as e:
+            print(f"Failed to sync commands: {e}")
+            
+        # Set Status
+        # We put this here to ensure it is set as early as possible after login negotiation
+        await self.change_presence(activity=discord.Game(name="Developed by Pluppys"))
+
+# Initialize Bot
+bot = MinecraftBot(command_prefix="!", intents=intents)
+
+
+# --- Checks ---
+def is_allowed_channel():
+    async def predicate(ctx):
+        if not ALLOWED_CHANNELS:
+            return True 
+        
+        if ctx.channel.id in ALLOWED_CHANNELS:
+            return True
+
+        embed = discord.Embed(
+            title="Wrong Channel", 
+            description=f"⛔ You cannot use commands here. Please go to <#{ALLOWED_CHANNELS[0]}>.", 
+            color=discord.Color.red()
+        )
+        if ctx.interaction:
+            await ctx.interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+             await ctx.reply(embed=embed, delete_after=5)
+        return False
+    return commands.check(predicate)
 
 @bot.event
 async def on_ready():
-    try:
-        synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} command(s)")
-    except Exception as e:
-        print(f"Failed to sync commands: {e}")
-    
-    # Set Status
-    await bot.change_presence(activity=discord.Game(name="Developed by Pluppys"))
+    # on_ready can be called multiple times (reconnects)
+    # Status is handled in setup_hook (for initial) but we can re-assert it here just in case of weird reconnections
+    # But usually setup_hook is sufficient for permanent status.
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
 
 @bot.event
 async def on_message(message):
-    # Ignore own messages
     if message.author == bot.user:
         return
 
     # Check for mention (Ping)
+    if ALLOWED_CHANNELS and message.channel.id not in ALLOWED_CHANNELS and not isinstance(message.channel, discord.DMChannel):
+         return
+
     if bot.user.mentioned_in(message) and message.mention_everyone is False:
         embed = discord.Embed(
             title="Minecraft Manager Bot Guide",
@@ -94,20 +129,20 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # --- Helper Function for System Commands ---
-async def run_system_command(interaction: discord.Interaction, action: str):
+async def run_system_command(ctx, action: str):
     """
     Executes a LinuxGSM command securely via sudo.
     User must have the configured Admin Role.
     """
     # Role Check
-    user_roles = [role.id for role in interaction.user.roles]
+    user_roles = [role.id for role in ctx.author.roles]
     if ADMIN_ROLE_ID not in user_roles:
         embed = discord.Embed(title="Permission Denied", description="⛔ You do not have permission to run this command.", color=discord.Color.red())
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        # CTX handles both interaction and text automatically
+        await ctx.reply(embed=embed, ephemeral=True) 
         return
 
-    # Defer response as these commands can take time
-    await interaction.response.defer(ephemeral=False) 
+    await ctx.defer() 
 
     action_verb = f"{action.capitalize()}ing"
     embed_loading = discord.Embed(
@@ -115,7 +150,7 @@ async def run_system_command(interaction: discord.Interaction, action: str):
         description=f"⏳ **{action_verb} the Minecraft server...** Please wait.",
         color=discord.Color.orange()
     )
-    await interaction.followup.send(embed=embed_loading)
+    msg = await ctx.send(embed=embed_loading)
 
     # Construct command: sudo -u mcserver /home/mcserver/mcserver <start|stop|restart>
     cmd = ["sudo", "-u", "mcserver", "/home/mcserver/mcserver", action]
@@ -137,7 +172,7 @@ async def run_system_command(interaction: discord.Interaction, action: str):
             if output:
                 embed_success.add_field(name="Output", value=f"```{output}```", inline=False)
                 
-            await interaction.followup.send(embed=embed_success)
+            await msg.edit(embed=embed_success)
         else:
             # Failure
             error_msg = result.stderr[:1900] if result.stderr else result.stdout[:1900]
@@ -150,37 +185,41 @@ async def run_system_command(interaction: discord.Interaction, action: str):
             if error_msg:
                 embed_fail.add_field(name="Error Output", value=f"```{error_msg}```", inline=False)
             
-            await interaction.followup.send(embed=embed_fail)
+            await msg.edit(embed=embed_fail)
 
     except Exception as e:
         embed_error = discord.Embed(title="Internal Error", description=f"❌ **An exception occurred:** {str(e)}", color=discord.Color.dark_red())
-        await interaction.followup.send(embed=embed_error)
+        await msg.edit(embed=embed_error)
 
 
-# --- Commands ---
+# --- Commands (Hybrid) ---
 
-@bot.tree.command(name="start", description="Start the Minecraft server")
-async def start_server(interaction: discord.Interaction):
-    await run_system_command(interaction, "start")
+@bot.hybrid_command(name="start", description="Start the Minecraft server")
+@is_allowed_channel()
+async def start_server(ctx):
+    await run_system_command(ctx, "start")
 
-@bot.tree.command(name="stop", description="Stop the Minecraft server")
-async def stop_server(interaction: discord.Interaction):
-    await run_system_command(interaction, "stop")
+@bot.hybrid_command(name="stop", description="Stop the Minecraft server")
+@is_allowed_channel()
+async def stop_server(ctx):
+    await run_system_command(ctx, "stop")
 
-@bot.tree.command(name="restart", description="Restart the Minecraft server")
-async def restart_server(interaction: discord.Interaction):
-    await run_system_command(interaction, "restart")
+@bot.hybrid_command(name="restart", description="Restart the Minecraft server")
+@is_allowed_channel()
+async def restart_server(ctx):
+    await run_system_command(ctx, "restart")
 
 
-@bot.tree.command(name="send", description="Send a command to the Minecraft server via RCON")
+@bot.hybrid_command(name="send", description="Send a command to the Minecraft server via RCON")
 @app_commands.describe(command="The command to execute")
-async def send(interaction: discord.Interaction, command: str):
-    if interaction.user.id not in ALLOWED_USERS:
+@is_allowed_channel()
+async def send(ctx, command: str):
+    if ctx.author.id not in ALLOWED_USERS:
         embed = discord.Embed(title="Permission Denied", description="⛔ You are not authorized to use this command.", color=discord.Color.red())
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.reply(embed=embed, ephemeral=True)
         return
 
-    await interaction.response.defer(ephemeral=True)
+    await ctx.defer(ephemeral=True)
 
     try:
         # Using the imported rcon context manager
@@ -189,7 +228,7 @@ async def send(interaction: discord.Interaction, command: str):
             response = mcr.command(command)
     except Exception as e:
         embed_error = discord.Embed(title="RCON Error", description=f"Failed to send command: {e}", color=discord.Color.red())
-        await interaction.followup.send(embed=embed_error, ephemeral=True)
+        await ctx.send(embed=embed_error, ephemeral=True)
         return
 
     if not response:
@@ -202,7 +241,7 @@ async def send(interaction: discord.Interaction, command: str):
          response = response[:1020] + "..."
     embed_response.add_field(name="Response", value=f"```{response}```", inline=False)
     
-    await interaction.followup.send(embed=embed_response, ephemeral=True)
+    await ctx.send(embed=embed_response, ephemeral=True)
 
 if __name__ == "__main__":
     bot.run(TOKEN)

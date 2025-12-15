@@ -1,6 +1,7 @@
 {
   "discord_token": "ENV_DISCORD_TOKEN",
   "discord_allowed_users": "ENV_DISCORD_ALLOWED_USERS",
+  "discord_allowed_channels": "ENV_DISCORD_ALLOWED_CHANNELS",
   "discord_admin_role_id": "ENV_DISCORD_ADMIN_ROLE_ID",
   "minecraft_ip": "ENV_MINECRAFT_IP",
   "minecraft_port": "ENV_RCON_PORT",
