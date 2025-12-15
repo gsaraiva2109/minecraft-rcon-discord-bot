@@ -66,13 +66,10 @@ class MinecraftBot(commands.Bot):
             print(f"Synced {len(synced)} command(s)")
         except Exception as e:
             print(f"Failed to sync commands: {e}")
-            
-        # Set Status
-        # We put this here to ensure it is set as early as possible after login negotiation
-        await self.change_presence(activity=discord.Game(name="Developed by Pluppys"))
 
 # Initialize Bot
-bot = MinecraftBot(command_prefix="!", intents=intents)
+activity = discord.Game(name="Developed by Pluppys")
+bot = MinecraftBot(command_prefix="!", intents=intents, activity=activity)
 
 
 # --- Checks ---
